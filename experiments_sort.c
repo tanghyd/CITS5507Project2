@@ -208,6 +208,89 @@ double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, ch
 }
 
 
+/*-------------------------------------------------------------------
+ * Function:    run_parallel_quick_sort
+ *      
+ *      Runs one parallel quick sort trial with "Smart Partition approach".
+ *      
+ *      Each process swaps halves of their array until all values in rank i
+ *      are less than all values rank i+1 for all ranks. After partitioning
+ *      data across MPI processes we can sort independently.
+ *
+ *      To write file to disk, we can either write data from each process in
+ *      chunks or use MPI_Gatherv to aggregate data onto one rank then save.
+ *
+ *      If the final array is not sorted a warning message will print.
+ *
+ *  Arguments:
+ *      comm: MPI_COMM_WORLD object from MPI.
+ *      world_size: total number of processes.
+ *      rank: process id.
+ *      *file_name: a file_name to save the binary file.
+ *      size: The total size of the array.
+ *      save: Whether to save to disk ( Save if != 0 ).
+ *
+ *  Returns:
+ *      Maximum runtime duration over all processes.
+ */
+
+double run_parallel_quick_sort(MPI_COMM comm, int int world_size, int rank, char *file_name, int size, int save, char *construct)
+{
+    validate_log2_procs(world_size, size);  // num processes is power of 2
+    // validate_equal_chunks(world_size, n);  // all chunk sizes match
+
+    // calculate chunk size per process
+    int chunk_size = size / world_size;
+    int remainder = size % chunk_size;  // handle variable length chunk sizes
+    if (remainder > 0 && (rank+1) == world_size)
+        chunk_size += remainder;  // add remainder elements to final rank
+
+    // instantiate data arrays
+    double *chunk = malloc(chunk_size * sizeof(double));
+    double* data;  // pointer to array data of length n  
+    if (rank == 0)
+        data = malloc(size * sizeof(double));
+
+    // sync processes and start timer
+    MPI_Barrier(MPI_COMM_WORLD);
+    double duration, max_duration;  // time elapsed for sorting algorithm
+    duration = MPI_Wtime();
+    
+    // read in file chunks with MPI independent parallel (rather than read in one process and scatter)
+    MPI_File_open(comm, file_name, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_read_at(file, rank*(n/world_size)*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
+    MPI_File_close(&file);
+
+    // final aggregated array will be saved on rank 0
+    if (rank == 0)
+        data = mpi_quick_sort(comm, rank, world_size, chunk, chunk_size, data);
+    else
+        mpi_quick_sort(comm, rank, world_size, chunk, chunk_size, NULL);
+
+
+    // separately merge chunks using a merge sort algorithm
+    // if (strcmp("serial", construct)==0)
+    //     merge_sort(chunk, temp, chunk_size);
+    // else if (strcmp("tasks", construct)==0) 
+    //     merge_sort_tasks(chunk, temp, chunk_size, 100);
+    // else if (strcmp("sections", construct)==0) 
+    //     merge_sort_sections(chunk, temp, chunk_size, 100);
+    
+    duration = MPI_Wtime() - duration;
+    MPI_Reduce(&duration, &max_duration, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+    if (rank == 0)
+    {
+        // ordered == 1 if sorted, else 0.
+        int ordered = check_array_order(data, n);
+        if (ordered == 0)
+            printf("Warning! Full array from %d file %s is not correctly sorted!\n", rank, argv[1]);
+    }
+
+    MPI_Finalize();
+    return max_duration;
+}
+
+
 int main(int argc, char* argv[])
 {
     // MPI
@@ -305,21 +388,6 @@ int main(int argc, char* argv[])
             // 		printf("Sorting array of size %d took %.7fs.\n", size, duration);
             // }
 
-            // sort array with (openmp multi threaded) parallel merge sort
-            snprintf(construct, sizeof(construct), "tasks");
-
-            duration = run_parallel_merge_sort(MPI_COMM_WORLD, world_size, rank, file_name, size, SAVE, construct);
-
-            if (rank == 0 && (strcmp("serial", construct) || strcmp("tasks", construct) || strcmp("sections", construct)))
-            {
-                // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                fprintf(fptr, "merge,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
-
-                if (VERBOSE)
-            		printf("Merge sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
-            }
-
-            
             // sort array with (openmp multi threaded) parallel enumeration sort (if size is below 100,000)
             if (size <= 100000)
             {
@@ -334,6 +402,33 @@ int main(int argc, char* argv[])
                     if (VERBOSE)
                         printf("Enumeration sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
                 }
+            }
+
+            // sort array with (openmp multi threaded) parallel merge sort
+            snprintf(construct, sizeof(construct), "tasks");
+
+            duration = run_parallel_merge_sort(MPI_COMM_WORLD, world_size, rank, file_name, size, SAVE, construct);
+
+            if (rank == 0 && (strcmp("serial", construct) || strcmp("tasks", construct) || strcmp("sections", construct)))
+            {
+                // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                fprintf(fptr, "merge,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+
+                if (VERBOSE)
+            		printf("Merge sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
+            }
+
+            // sort array with (openmp multi threaded) parallel quick sort
+            snprintf(construct, sizeof(construct), "tasks");
+            duration = run_parallel_quick_sort(MPI_COMM_WORLD, world_size, rank, file_name, size, SAVE, construct);
+
+            if (rank == 0 && (strcmp("serial", construct) || strcmp("tasks", construct) || strcmp("sections", construct)))
+            {
+                // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                fprintf(fptr, "quick,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+
+                if (VERBOSE)
+            		printf("Quick sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
             }
 
         }

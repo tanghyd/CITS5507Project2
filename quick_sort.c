@@ -54,12 +54,10 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
     double *new_array; // temp array for transfering data between processes
     double *array;  // array pointer we'll use between tree recursions
     array = chunk;
-    
-    MPI_Barrier(MPI_COMM_WORLD);
 
-    int max_idx = get_maximum_idx(array, size);
-    int min_idx = get_mininimum_idx(array, size);
-
+    // DEBUG
+    // int max_idx = get_maximum_idx(array, size);
+    // int min_idx = get_mininimum_idx(array, size);
     // printf(
     //     "START   | rank %d | size: %4d |          \
     //     min: array[%4d]=%lf | max: array[%4d]=%lf     \
@@ -75,6 +73,7 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
     int depth = (int)log2(world_size);
     for (int current_depth = 0; current_depth < depth; current_depth++)
     {
+        // DEBUG
         // double sorted_total = 0; // reduction
         // double sorted_array_total=0;
         // for (i = 0; i < size; i++)
@@ -82,9 +81,9 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
         // MPI_Reduce(&sorted_array_total, &sorted_total, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
         // if (rank == 0)  
         //     printf("depth %d sorted_total=%lf\n", current_depth, sorted_total);
-
         // fflush(stdout);
-        // MPI_Barrier(MPI_COMM_WORLD);
+
+        MPI_Barrier(MPI_COMM_WORLD);
 
         // work out which processes to send data to/fr
         partition_size = world_size / (int)pow(2, current_depth);  // process groups
@@ -116,6 +115,7 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
             
         // partition arrays into [ x < pivot , x >= pivot].
         i = -1; // number of elements less than pivot - 1
+
         // #pragma omp parallel for shared(array, i)
         for (j = 0; j < size; j++)
         {
@@ -126,10 +126,16 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
                 swap(&array[i], &array[j]);  // pass mem address of array
             }
         }
-        // swap(&array[i + 1], &array[size-1]); // other ranks won't have exact pivot
+
+        /* swap final value & pivot is present in quick sort but in this case
+        other ranks won't have the exact pivot value - this can cause bugs */
+        // swap(&array[i + 1], &array[size-1]);
+
+        // this index is the first element position of the upper array
         int partition_idx = i + 1;
 
-        // check ordering of intermediate arrays
+        // DEBUG
+        // check ordering of intermediate arrays (adds extra time)
         // for (i=0; i < partition_idx; i++)
         // {
         //     if (pivot < array[i]) {
@@ -153,8 +159,8 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
 
         // compute swapping partner process index to send half of array to
         partition_partner = (rank + (int)(partition_size/2)) % partition_size;
-        partition_partner += ((int)(rank/partition_size) * partition_size);  // take floor of value 
-        
+        partition_partner += ((int)(rank/partition_size) * partition_size);  // take floor of partition group
+
         // communicate array sizes by integers
         lower_size = partition_idx;
         upper_size = size - partition_idx;
@@ -178,13 +184,13 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
         new_array = malloc(size*sizeof(double));
 
         // transfer array data
-        // printf("source %d --> destination %d\n", rank, partition_partner);
         if (rank > partition_partner)
         {
             // send lower half data y1 from [y1, y2] and receive external upper half data x2 for [x2, y2]
             MPI_Isend(array, lower_size, MPI_DOUBLE, partition_partner, 0, MPI_COMM_WORLD, &request);
             MPI_Irecv(new_array, new_size, MPI_DOUBLE, partition_partner, 1, MPI_COMM_WORLD, &request);
             MPI_Wait(&request, &status);
+
             // #pragma omp parallel for shared(new_array, array)  // slower!
             for (i = 0; i < upper_size; i++)
                 new_array[new_size+i] = array[lower_size+i];
@@ -195,6 +201,7 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
             MPI_Isend(&array[lower_size], upper_size, MPI_DOUBLE, partition_partner, 1, MPI_COMM_WORLD, &request);
             MPI_Irecv(&new_array[lower_size], new_size, MPI_DOUBLE, partition_partner, 0, MPI_COMM_WORLD, &request);
             MPI_Wait(&request, &status);
+
             // #pragma omp parallel for shared(new_array, array)  // slower!
             for (i = 0; i < lower_size; i++)
                 new_array[i] = array[i];
@@ -206,7 +213,6 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
         array = new_array;
 
         // DEBUG
-
         // write file to disk for debug
         // char file_name[50];
         // snprintf(file_name, sizeof(file_name), "tests/test_%d_rank_%d_%d.out", size, rank, current_depth);
@@ -214,6 +220,7 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
         // write_array(file_name, array, size);
 
             
+        // DEBUG
         // int max_idx = get_maximum_idx(array, size);
         // int min_idx = get_mininimum_idx(array, size);
         // printf(
@@ -225,8 +232,6 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
         //     array[0], array[1], array[2]
         // );
         // fflush(stdout);
-        MPI_Barrier(MPI_COMM_WORLD);
-        // break;
     }
 
     /*  5. Now the upper-half processes have only values greater than the pivot,
@@ -240,7 +245,8 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
     // quick_sort(array, 0, size-1);
     quick_sort_tasks(array, 0, size-1, 100);
 
-    int ordered = check_array_order(array, size);
+    // DEBUG
+    // int ordered = check_array_order(array, size);
     // if (ordered == 0)
     //     printf("Warning! rank %d is not correctly sorted!\n", rank);
     // else
@@ -258,12 +264,12 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
         for (i = 0; i < world_size-1; i++){
             displacements[i+1] = displacements[i] + recvcounts[i];
         
+            // DEBUG
             // printf(
             //     "displacements[%d]=%d | recvcounts[%d]=%d\n",
             //     i, displacements[i], i, recvcounts[i]
             // ); 
         }
-
     }
 
     MPI_Gatherv(array, size, MPI_DOUBLE, data, recvcounts, displacements, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -271,7 +277,7 @@ double* mpi_quick_sort(MPI_Comm comm, int rank, int world_size, double *chunk, i
     return data;
 }
 
-// utility function to swap two elements
+/* Utility function to swap two elements by memory address. */
 void swap(double *a, double *b)
 {
     double temp = *a;
@@ -280,7 +286,7 @@ void swap(double *a, double *b)
 }
 
 
-/* last-element partition function */
+/* Standard last-element partition function for quick sort. */
 int partition(double *arr, int low, int high)
 {
     double pivot = arr[high];
@@ -301,7 +307,7 @@ int partition(double *arr, int low, int high)
 }
 
 
-/* recursive quicksort */
+/* Serial recursive quick sort */
 void quick_sort(double *arr, int low, int high)
 {
     {
@@ -320,7 +326,7 @@ void quick_sort(double *arr, int low, int high)
 }
 
 
-/* parallel recursive quicksort - tasking */
+/* Parallel recursive quicksort - tasking */
 void quick_sort_tasks(double *arr, int low, int high, int cutoff)
 {
     {
@@ -346,7 +352,7 @@ void quick_sort_tasks(double *arr, int low, int high, int cutoff)
 }
 
 
-/* parallel recursive quicksort - sections */
+/* Parallel recursive quicksort - sections */
 void quick_sort_sections(double *arr, int low, int high, int cutoff)
 {
     if (low >= 0 && high >= 0 && low < high)
