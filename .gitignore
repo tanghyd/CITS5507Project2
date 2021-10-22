@@ -2,6 +2,6 @@
 
 data/*
 tests/*
+results/final/*
 
-parallel*
-serial*
+notebooks/testing.ipynb
