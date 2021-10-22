@@ -11,8 +11,12 @@
 #include "quick_sort.h"
 #include "enumeration_sort.h"
 
-// sorting experiment functions
-double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, char *file_name, int size, int save, char *construct);
-double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *file_name, int size, int save, char *construct);
+/* Function Declarations */
 
+double run_merge_merge_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
+// double run_merge_quick_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
+double run_merge_enumeration_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
+// double run_partition_merge_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
+double run_partition_quick_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
+// double run_partition_enumeration_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
 #endif

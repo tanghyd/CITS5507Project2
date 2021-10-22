@@ -11,7 +11,7 @@
 
 
 /*-------------------------------------------------------------------
- * Function:    run_parallel_merge_sort
+ * Function:    run_merge_merge_sort
  *      
  *      Runs one parallel merge sort trial.
  *
@@ -21,19 +21,21 @@
  *      comm: MPI_COMM_WORLD object from MPI.
  *      world_size: total number of processes.
  *      rank: process id.
- *      *file_name: a file_name to save the binary file.
  *      size: The total size of the array.
- *      save: Whether to save to disk ( Save if != 0 ).
+ *      *construct: The OpenMP construct to use (or serial - no parallelisation).
+ *      *in_file: a file_name to read the binary file.
+ *      *out_file: a file_name to write the binary file.
+ *          If NULL, no file will be saved.
  *
  *  Returns:
  *      Maximum runtime duration over all processes.
  */
 
-double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *file_name, int size, int save, char *construct)
+double run_merge_merge_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file)
 {
-    if (!((strcmp("serial", construct)==0) || (strcmp("tasks", construct)==0) || (strcmp("sections", construct)==0)))
+    if (!((strcmp("single", construct)==0) || (strcmp("tasks", construct)==0) || (strcmp("sections", construct)==0)))
     {
-        printf("Warning! Only 'serial', 'tasks', and sections' are valid for merge_sort. Received: %s. Aborting!\n", construct);
+        printf("Warning! Only 'single', 'tasks', and sections' are valid for merge_sort. Received: %s. Aborting!\n", construct);
         return 0.;
     }
 
@@ -56,12 +58,12 @@ double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *fi
     duration = MPI_Wtime();
 
     // read in file chunks with MPI independent parallel (rather than read in one process and scatter)
-    MPI_File_open(comm, file_name, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_open(comm, in_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     MPI_File_read_at(file, rank*chunk_size*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
     MPI_File_close(&file);
 
     // separately merge chunks using a merge sort algorithm
-    if (strcmp("serial", construct)==0)
+    if (strcmp("single", construct)==0)
         merge_sort(chunk, temp, chunk_size);
     else if (strcmp("tasks", construct)==0) 
         merge_sort_tasks(chunk, temp, chunk_size, 100);
@@ -82,13 +84,14 @@ double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *fi
 
     // if save == 0, then we write sorted arrays to disk
     // note: this will obviously effect runtimes
-    if (save != 0)
+    if (out_file)
     {
+        write_array(out_file, data, size);
         // send chunks of full data array to each process
-        MPI_Scatter(data, chunk_size, MPI_DOUBLE, chunk, chunk_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_File_open(comm, file_name, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
-        MPI_File_write_at(file, rank*chunk_size*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
-        MPI_File_close(&file);
+        // MPI_Scatter(data, chunk_size, MPI_DOUBLE, chunk, chunk_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        // MPI_File_open(comm, out_file, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+        // MPI_File_write_at(file, rank*chunk_size*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
+        // MPI_File_close(&file);
     }
 
     duration = MPI_Wtime() - duration;
@@ -99,7 +102,7 @@ double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *fi
         // ordered == 1 if sorted, else 0.
         int ordered = check_array_order(data, size);
         if (ordered == 0)
-            printf("Warning! rank %d file %s is not correctly sorted!\n", rank, file_name);
+            printf("Warning! rank %d file %s is not correctly sorted!\n", rank, in_file);
         free(data);
     }
     free(chunk);
@@ -110,7 +113,7 @@ double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *fi
 
 
 /*-------------------------------------------------------------------
- * Function:    run_parallel_enumeration_sort
+ * Function:    run_merge_enumeration_sort
  *      
  *      Runs one parallel enumeration sort trial.
  *      
@@ -123,19 +126,22 @@ double run_parallel_merge_sort(MPI_Comm comm, int world_size, int rank, char *fi
  *      comm: MPI_COMM_WORLD object from MPI.
  *      world_size: total number of processes.
  *      rank: process id.
- *      *file_name: a file_name to save the binary file.
  *      size: The total size of the array.
- *      save: Whether to save to disk ( Save if != 0 ).
+ *      *construct: The OpenMP construct to use (or serial - no parallelisation).
+ *      *in_file: a file_name to read the binary file.
+ *      *out_file: a file_name to write the binary file.
+ *          If NULL, no file will be saved.
  *
  *  Returns:
  *      Maximum runtime duration over all processes.
  */
 
-double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, char *file_name, int size, int save, char *construct)
+
+double run_merge_enumeration_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file)
 {
-    if (!((strcmp("serial", construct)==0) || (strcmp("parallel", construct)==0)))
+    if (!((strcmp("single", construct)==0) || (strcmp("parallel", construct)==0)))
     {
-        printf("Warning! Only 'serial' and parallel' are valid constructs for enumeration_sort. Received: %s. Aborting!\n", construct);
+        printf("Warning! Only 'single' and parallel' are valid constructs for enumeration_sort. Received: %s. Aborting!\n", construct);
         return 0.;
     }
 
@@ -158,12 +164,12 @@ double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, ch
     duration = MPI_Wtime();
 
     // read in file chunks with MPI independent parallel (rather than read in one process and scatter)
-    MPI_File_open(comm, file_name, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_open(comm, in_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     MPI_File_read_at(file, rank*chunk_size*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
     MPI_File_close(&file);
 
     // separately merge chunks using a enumeration sort algorithm
-    if (strcmp("serial", construct) == 0)
+    if (strcmp("single", construct) == 0)
         enumeration_sort(chunk, temp, chunk_size);
     else if (strcmp("parallel", construct) == 0)
         enumeration_sort_parallel(chunk, temp, chunk_size);
@@ -180,15 +186,15 @@ double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, ch
         mpi_merge(depth, rank, chunk, chunk_size, MPI_COMM_WORLD, NULL);
     }
 
-    // if save == 0, then we write sorted arrays to disk
-    // note: this will obviously effect runtimes
-    if (save != 0)
+    // if out_file is not NULL we write to disk (assumes valid file)
+    if (out_file)
     {
+        write_array(out_file, data, size);
         // send chunks of full data array to each process
-        MPI_Scatter(data, chunk_size, MPI_DOUBLE, chunk, chunk_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        MPI_File_open(comm, file_name, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
-        MPI_File_write_at(file, rank*chunk_size*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
-        MPI_File_close(&file);
+        // MPI_Scatter(data, chunk_size, MPI_DOUBLE, chunk, chunk_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        // MPI_File_open(comm, out_file, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+        // MPI_File_write_at(file, rank*chunk_size*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
+        // MPI_File_close(&file);
     }
 
     duration = MPI_Wtime() - duration;
@@ -199,7 +205,7 @@ double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, ch
         // ordered == 1 if sorted, else 0.
         int ordered = check_array_order(data, size);
         if (ordered == 0)
-            printf("Warning! rank %d file %s is not correctly sorted!\n", rank, file_name);
+            printf("Warning! rank %d file %s is not correctly sorted!\n", rank, in_file);
         free(data);
     }
     free(chunk);
@@ -209,7 +215,7 @@ double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, ch
 
 
 /*-------------------------------------------------------------------
- * Function:    run_parallel_quick_sort
+ * Function:    run_partition_quick_sort
  *      
  *      Runs one parallel quick sort trial with "Smart Partition approach".
  *      
@@ -226,30 +232,44 @@ double run_parallel_enumeration_sort(MPI_Comm comm, int world_size, int rank, ch
  *      comm: MPI_COMM_WORLD object from MPI.
  *      world_size: total number of processes.
  *      rank: process id.
- *      *file_name: a file_name to save the binary file.
  *      size: The total size of the array.
- *      save: Whether to save to disk ( Save if != 0 ).
+ *      *construct: The OpenMP construct to use (or serial - no parallelisation).
+ *      *in_file: a file_name to read the binary file.
+ *      *out_file: a file_name to write the binary file.
+ *          If NULL, no file will be saved.
  *
  *  Returns:
  *      Maximum runtime duration over all processes.
  */
 
-double run_parallel_quick_sort(MPI_COMM comm, int int world_size, int rank, char *file_name, int size, int save, char *construct)
+double run_partition_quick_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file)
 {
+    // check if valid OpenMP construct is provided
+    if (!((strcmp("single", construct)==0) || (strcmp("tasks", construct)==0) || (strcmp("sections", construct)==0)))
+    {
+        printf("Warning! Only 'single', 'tasks', and sections' are valid for quick_sort. Received: %s. Aborting!\n", construct);
+        return 0.;
+    }
+    
+    // set up MPI variables
+    MPI_File file;
+    MPI_Status status;
+
     validate_log2_procs(world_size, size);  // num processes is power of 2
     // validate_equal_chunks(world_size, n);  // all chunk sizes match
 
-    // calculate chunk size per process
-    int chunk_size = size / world_size;
+    // calculate chunk size per process0
+    int chunk_size = chunk_size = size / world_size;
     int remainder = size % chunk_size;  // handle variable length chunk sizes
     if (remainder > 0 && (rank+1) == world_size)
         chunk_size += remainder;  // add remainder elements to final rank
-
-    // instantiate data arrays
     double *chunk = malloc(chunk_size * sizeof(double));
+
+    // variables for error checking
     double* data;  // pointer to array data of length n  
-    if (rank == 0)
-        data = malloc(size * sizeof(double));
+    int recvcounts[world_size];
+    int displacements[world_size];
+    int ordered;
 
     // sync processes and start timer
     MPI_Barrier(MPI_COMM_WORLD);
@@ -257,36 +277,64 @@ double run_parallel_quick_sort(MPI_COMM comm, int int world_size, int rank, char
     duration = MPI_Wtime();
     
     // read in file chunks with MPI independent parallel (rather than read in one process and scatter)
-    MPI_File_open(comm, file_name, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
-    MPI_File_read_at(file, rank*(n/world_size)*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
+    MPI_File_open(comm, in_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_read_at(file, rank*(size/world_size)*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
     MPI_File_close(&file);
 
-    // final aggregated array will be saved on rank 0
-    if (rank == 0)
-        data = mpi_quick_sort(comm, rank, world_size, chunk, chunk_size, data);
-    else
-        mpi_quick_sort(comm, rank, world_size, chunk, chunk_size, NULL);
+    // mpi partition will re-organise chunks between processes such that they are ordered
+    chunk = mpi_partition(comm, world_size, rank, chunk, &chunk_size);  // chunk_size edited in function
 
+    // separately sort chunks using a quick sort algorithm
+    if (strcmp("single", construct)==0)
+        quick_sort(chunk, 0, chunk_size-1);
+    else if (strcmp("tasks", construct)==0) 
+        quick_sort_tasks(chunk, 0, chunk_size-1, 100);
+    else if (strcmp("sections", construct)==0) 
+        quick_sort_sections(chunk, 0, chunk_size-1, 100);
 
-    // separately merge chunks using a merge sort algorithm
-    // if (strcmp("serial", construct)==0)
-    //     merge_sort(chunk, temp, chunk_size);
-    // else if (strcmp("tasks", construct)==0) 
-    //     merge_sort_tasks(chunk, temp, chunk_size, 100);
-    // else if (strcmp("sections", construct)==0) 
-    //     merge_sort_sections(chunk, temp, chunk_size, 100);
+    // compute aggregated array size and displacement buffers for file writing and/or gatherv
+    MPI_Allgather(&chunk_size, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
+    displacements[0] = 0;
+    for (int i = 0; i < world_size-1; i++)
+    {
+        displacements[i+1] = displacements[i] + recvcounts[i];
+    }
+
+    // if out_file is not None we save
+    if (out_file)
+    {
+        // write chunks (of variable length) to file from each process
+        MPI_File_open(comm, out_file, MPI_MODE_CREATE|MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+        MPI_File_write_at(file, displacements[rank]*sizeof(chunk), chunk, chunk_size, MPI_DOUBLE, &status);
+        MPI_File_close(&file);
+    }
     
     duration = MPI_Wtime() - duration;
     MPI_Reduce(&duration, &max_duration, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
+
+    // validation:
+    // check ordering on each individual process
+    ordered = check_array_order(chunk, chunk_size);
+    if (ordered == 0)  // ordered == 1 if sorted, else 0.
+        printf("Warning! Array from %d file %s is not correctly sorted!\n", rank, in_file);
+
+    // confirm that the aggregated data across all chunks is in fact equal
+    if (rank == 0)
+        data = malloc(size * sizeof(double));
+
+    // gather variable length arrays to data - data must be allocated memory equal to correct total size
+    MPI_Gatherv(chunk, chunk_size, MPI_DOUBLE, data, recvcounts, displacements, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     if (rank == 0)
     {
         // ordered == 1 if sorted, else 0.
-        int ordered = check_array_order(data, n);
+        ordered = check_array_order(data, size);
         if (ordered == 0)
-            printf("Warning! Full array from %d file %s is not correctly sorted!\n", rank, argv[1]);
+            printf("Warning! Full array from %d file %s is not correctly sorted!\n", rank, out_file);
+        free(data);
     }
 
-    MPI_Finalize();
+    free(chunk); 
+
     return max_duration;
 }
 
@@ -308,19 +356,19 @@ int main(int argc, char* argv[])
 
     // OpenMP    
     omp_set_dynamic(0);  // disable dynamic thread teams
+    int num_threads;
 
-    // set number of threads
-    int thread_exp = MAX_THREADS;
-    int num_threads = (int)pow(2, thread_exp);  // 2, 4, 8, 16
-    omp_set_num_threads(num_threads);
+    // run configuration
     if (rank == 0 && VERBOSE)
     {
         printf("SETTINGS: SAVE=%d | VERBOSE=%d | RUN_SERIAL=%d | RUN_PARALLEL=%d\n", SAVE, VERBOSE, RUN_SERIAL, RUN_PARALLEL);  
-        printf("OpenMP Threads: %d\n", omp_get_max_threads());
+        printf("OpenMP Threads: %d | ", (int)pow(2, MAX_THREADS));
+        printf("MPI Processes: %d\n", world_size);
     }
 
 
-    // experiment timer
+    // experiment timers
+    int trial;
     double runtime, max_runtime;
 
     // run experiments with single process on rank 0 only
@@ -351,7 +399,7 @@ int main(int argc, char* argv[])
 
         // output .csv to save experiment runtime results
         FILE *fptr;
-        char results_file[] = "results/parallel_merge_sort_results.csv";
+        char results_file[] = "results/mpi_sort_results.csv";
 
         char file_name[64];  // array to read in for sorting
         char construct[32]; // OpenMP construct to use for sorting algorithm
@@ -368,69 +416,140 @@ int main(int argc, char* argv[])
             }
         }
         
-        // loop over multiple array sizes
-        for (int s = 0; s < n_arrays; s++)
+        // experiments that do not use MPI
+        if (RUN_SERIAL != 0)
         {
-            // get file of specific array length
-            size = ARRAY_SIZES[s];
-            snprintf(file_name, sizeof(file_name), "data/serial/unsorted_%d.bin", size);
 
-            // sort array with (single threaded) parallel merge sort
-            // duration = run_parallel_merge_sort(MPI_COMM_WORLD, world_size, rank, file_name, size);
+        }
 
-            // record performance results to file
-            // if (rank == 0)
-            // {
-            //     // columns=[algorithm,mpi:world_size, openmp:construct, openmp:threads, size, duration]
-            //     fprintf(fptr, "merge,%d,serial,%d,%d,%.17f\n", world_size, 1, size, duration);
-
-            //     if (VERBOSE)
-            // 		printf("Sorting array of size %d took %.7fs.\n", size, duration);
-            // }
-
-            // sort array with (openmp multi threaded) parallel enumeration sort (if size is below 100,000)
-            if (size <= 100000)
+        // all experiments that do use MPI
+        if (RUN_PARALLEL != 0)
+        {
+            // loop over multiple array sizes
+            for (int s = 0; s < n_arrays; s++)
             {
-                snprintf(construct, sizeof(construct), "parallel");
-                duration = run_parallel_enumeration_sort(MPI_COMM_WORLD, world_size, rank, file_name, size, SAVE, construct);
+                MPI_Barrier(MPI_COMM_WORLD);
+                num_threads = 1;
+                size = ARRAY_SIZES[s];
 
-            if (rank == 0 && (strcmp("serial", construct) || strcmp("parallel", construct)))
+                snprintf(file_name, sizeof(file_name), "data/parallel/unsorted_%d.bin", size);
+
+                // loop through trials
+                for (trial=0; trial < TRIALS; trial++)
                 {
-                    // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                    fprintf(fptr, "enumeration,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+                    if (rank == 0)
+                        printf("\nTrial %d:\n", trial);
+                        
+                    // sort array with (openmp multi threaded) parallel enumeration sort (if size is below 100,000)
+                    if (size <= 100000)
+                    {
+                        snprintf(construct, sizeof(construct), "single");
 
-                    if (VERBOSE)
-                        printf("Enumeration sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
+                        duration = run_merge_enumeration_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+
+                        // printf("array loop size %d\n", size);
+                        if (rank == 0)
+                        {
+                            // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                            fprintf(fptr, "enumeration,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+                            if (VERBOSE)
+                                printf("Enumeration sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                        }
+                    }
+
+                    // sort array with (openmp multi threaded) parallel merge sort
+                    snprintf(construct, sizeof(construct), "single");
+                    duration = run_merge_merge_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+
+                    if (rank == 0)
+                    {
+                        // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                        fprintf(fptr, "merge,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+                        if (VERBOSE)
+                            printf("Merge sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                    }
+
+                    // sort array with (openmp multi threaded) parallel quick sort
+                    snprintf(construct, sizeof(construct), "single");
+                    duration = run_partition_quick_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+                    if (rank == 0)
+                    {
+                        // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                        fprintf(fptr, "quick,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+                        if (VERBOSE)
+                            printf("Quick sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                    }
                 }
             }
 
-            // sort array with (openmp multi threaded) parallel merge sort
-            snprintf(construct, sizeof(construct), "tasks");
-
-            duration = run_parallel_merge_sort(MPI_COMM_WORLD, world_size, rank, file_name, size, SAVE, construct);
-
-            if (rank == 0 && (strcmp("serial", construct) || strcmp("tasks", construct) || strcmp("sections", construct)))
+            // loop through each thread size (dont want to switch threads frequently)
+            for (int n = 1; n < MAX_THREADS+1; n++)
             {
-                // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                fprintf(fptr, "merge,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+                num_threads = (int)pow(2, MAX_THREADS);  // 2, 4, 8, 16
+                omp_set_num_threads(num_threads);
+                if (rank == 0)
+                    printf("\nOpenMP Threads: %d\n", omp_get_max_threads());
 
-                if (VERBOSE)
-            		printf("Merge sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
+                // loop over multiple array sizes
+                for (int s = 0; s < n_arrays; s++)
+                {
+                    MPI_Barrier(MPI_COMM_WORLD);
+                    size = ARRAY_SIZES[s];
+
+                    snprintf(file_name, sizeof(file_name), "data/parallel/unsorted_%d.bin", size);
+
+                    // loop through experiments n=TRIALS times
+                    for (trial=0; trial < TRIALS; trial++)
+                    {
+                        if (rank == 0)
+                            printf("\nTrial %d:\n", trial);
+
+                        // sort array with (openmp multi threaded) parallel enumeration sort (if size is below 100,000)
+                        if (size <= 100000)
+                        {
+                            snprintf(construct, sizeof(construct), "parallel");
+
+                            duration = run_merge_enumeration_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+
+                            // printf("array loop size %d\n", size);
+                            if (rank == 0)
+                            {
+                                // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                                fprintf(fptr, "enumeration,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+
+                                if (VERBOSE)
+                                    printf("Enumeration sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                            }
+                        }
+
+                        // sort array with (openmp multi threaded) parallel merge sort
+                        snprintf(construct, sizeof(construct), "tasks");
+                        duration = run_merge_merge_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+
+                        if (rank == 0)
+                        {
+                            // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                            fprintf(fptr, "merge,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+
+                            if (VERBOSE)
+                                printf("Merge sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                        }
+
+                        // sort array with (openmp multi threaded) parallel quick sort
+                        snprintf(construct, sizeof(construct), "tasks");
+                        duration = run_partition_quick_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+
+                        if (rank == 0)
+                        {
+                            // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                            fprintf(fptr, "quick,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
+
+                            if (VERBOSE)
+                                printf("Quick sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                        }
+                    }
+                }
             }
-
-            // sort array with (openmp multi threaded) parallel quick sort
-            snprintf(construct, sizeof(construct), "tasks");
-            duration = run_parallel_quick_sort(MPI_COMM_WORLD, world_size, rank, file_name, size, SAVE, construct);
-
-            if (rank == 0 && (strcmp("serial", construct) || strcmp("tasks", construct) || strcmp("sections", construct)))
-            {
-                // columns=[algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                fprintf(fptr, "quick,%d,%s,%d,%d,%.17f\n", world_size, construct, num_threads, size, duration);
-
-                if (VERBOSE)
-            		printf("Quick sort (%s) for array of size %d took %.7fs.\n", construct, size, duration);
-            }
-
         }
 
         // end timer and close file
@@ -440,7 +559,7 @@ int main(int argc, char* argv[])
         {
             fclose(fptr);
             if (VERBOSE)
-                printf("Parallel IO experiments with %d processes completed in %.7gs.\n\n", world_size, max_runtime);
+                printf("All sorting experiments with %d processes completed in %.7gs.\n\n", world_size, max_runtime);
         }
     }
 
