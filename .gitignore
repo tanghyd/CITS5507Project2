@@ -1,7 +1,5 @@
 *.ipynb_checkpoints
-
+.gitignore
 data/*
 tests/*
-results/final/*
-
 notebooks/testing.ipynb
