@@ -2,11 +2,11 @@
 #include "experiments_sort.h"
 
 #define MAX_THREADS 3  // 2**4 = 16 threads
-#define TRIALS 5
+#define TRIALS 3
 
 // #define SAVE 0  // save to file
 #define VERBOSE 1
-#define RUN_SERIAL 0
+#define RUN_SERIAL 1
 #define RUN_PARALLEL 1
 
 int main(int argc, char* argv[])
@@ -41,8 +41,7 @@ int main(int argc, char* argv[])
     // run specifications
     int size;
     int n_arrays = 5;
-    // int ARRAY_SIZES[5] = {10000, 100000, 1000000, 10000000, 100000000};
-    int ARRAY_SIZES[5] = {10000, 10001, 10002, 10003, 10004};
+    int ARRAY_SIZES[5] = {10000, 100000, 1000000, 10000000, 100000000};
 
     // experiment timers
     int trial;
@@ -52,9 +51,10 @@ int main(int argc, char* argv[])
 
     // output .csv to save experiment runtime results
     FILE *fptr;
-    char results_file[] = "results/test_uneven.csv";
+    char results_file[] = "results/mpi_sort_results.csv";
 
     char file_name[64];  // array to read in for sorting
+    char algorithm[32]; // sorting algorithm
     char construct[32]; // OpenMP construct to use for sorting algorithm
     
     // only need to write performance results on rank 0
@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
         for (int s = 0; s < n_arrays; s++)
         {
             size = ARRAY_SIZES[s];
-            snprintf(file_name, sizeof(file_name), "data/parallel/unsorted_%d.bin", 100000);
+            snprintf(file_name, sizeof(file_name), "data/parallel/unsorted_%d.bin", size);
             
             // dynamic memory array
             double *random_arr = malloc(size * sizeof(double));
@@ -143,6 +143,7 @@ int main(int argc, char* argv[])
                     printf("\nTrial %d:\n", i);
 
                     // QUICK SORT
+                    
                     // openmp quick sort - tasks
                     copy_double_array(random_arr, arr, size);
 
@@ -210,82 +211,16 @@ int main(int argc, char* argv[])
     // all experiments that do use MPI
     if (RUN_PARALLEL != 0)
     {
-        num_threads = 1;
-        omp_set_num_threads(num_threads);
-        if (rank == 0)
-        {
-            printf("Running parallel experiments with %d processes\n", world_size);
-            printf("\nOpenMP Threads: %d\n", omp_get_max_threads());
-        }
-        // loop over multiple array sizes
-        for (int s = 0; s < n_arrays; s++)
-        {
-            MPI_Barrier(MPI_COMM_WORLD);
-            size = ARRAY_SIZES[s];
-
-            snprintf(file_name, sizeof(file_name), "data/parallel/unsorted_%d.bin", 100000);
-
-            // loop through trials
-            for (trial=0; trial < TRIALS; trial++)
-            {
-                // sort array with (openmp multi threaded) parallel enumeration sort (if size is below 100,000)
-                if (size <= 100000)
-                {
-                    snprintf(construct, sizeof(construct), "single");
-
-                    duration = run_merge_enumeration_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
-
-                    // printf("array loop size %d\n", size);
-                    if (rank == 0)
-                    {
-                        // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                        fprintf(
-                            fptr, "merge,enumeration_sort,%d,%s,%d,%d,%.17f\n",
-                            world_size, construct, num_threads, size, duration
-                        );
-                        if (VERBOSE)
-                            printf("Enumeration sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
-                    }
-                }
-
-                // sort array with (openmp multi threaded) parallel merge sort
-                snprintf(construct, sizeof(construct), "single");
-                duration = run_merge_merge_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
-
-                if (rank == 0)
-                {
-                    // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                    fprintf(
-                        fptr, "merge,merge_sort,%d,%s,%d,%d,%.17f\n",
-                        world_size, construct, num_threads, size, duration
-                    );
-                    if (VERBOSE)
-                        printf("Merge sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
-                }
-
-                // sort array with (openmp multi threaded) parallel quick sort
-                snprintf(construct, sizeof(construct), "single");
-                duration = run_partition_quick_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
-                if (rank == 0)
-                {
-                    // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
-                    fprintf(
-                        fptr, "partition,quick_sort,%d,%s,%d,%d,%.17f\n",
-                        world_size, construct, num_threads, size, duration
-                    );
-                    if (VERBOSE)
-                        printf("Quick sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
-                }
-            }
-        }
-
         // loop through each thread size (dont want to switch threads frequently)
-        for (int n = 1; n < MAX_THREADS+1; n++)
+        for (int n = 0; n < MAX_THREADS+1; n++)
         {
-            num_threads = (int)pow(2, n);  // 2, 4, 8, 16
+            num_threads = (int)pow(2, n);  // 1, 2, 4, 8... 16
             omp_set_num_threads(num_threads);
             if (rank == 0)
-                printf("OpenMP Threads: %d\n", omp_get_max_threads());
+            {
+                printf("Running MPI Parallel experiments with %d processes\n", world_size);
+                printf("\nOpenMP Threads: %d\n", omp_get_max_threads());
+            }
 
             // loop over multiple array sizes
             for (int s = 0; s < n_arrays; s++)
@@ -295,58 +230,116 @@ int main(int argc, char* argv[])
 
                 snprintf(file_name, sizeof(file_name), "data/parallel/unsorted_%d.bin", size);
 
-                // loop through experiments n=TRIALS times
+                // loop through trials
                 for (trial=0; trial < TRIALS; trial++)
                 {
-                    // sort array with (openmp multi threaded) parallel enumeration sort (if size is below 100,000)
+                    // ENUMERATION SORT - ONE THREAD WITH MPI MERGE AND MPI PARTITION
+
+                    // sort array with (openmp single threaded) enumeration sort (if size is below 100,000)
                     if (size <= 100000)
                     {
-                        snprintf(construct, sizeof(construct), "parallel");
+                        // select sorting algorithm implementation based on num_threads
+                        snprintf(algorithm, sizeof(algorithm), "enumeration");
+                        if (num_threads == 1)
+                            snprintf(construct, sizeof(construct), "single");
+                        else
+                            snprintf(construct, sizeof(construct), "parallel");
 
-                        duration = run_merge_enumeration_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
-
-                        // printf("array loop size %d\n", size);
+                        // run mpi_merge experiment
+                        duration = run_mpi_merge(MPI_COMM_WORLD, world_size, rank, size, algorithm, construct, file_name, NULL);
                         if (rank == 0)
                         {
                             // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
                             fprintf(
-                                fptr, "merge,enumeration_sort,%d,%s,%d,%d,%.17f\n",
-                                world_size, construct, num_threads, size, duration);
-
+                                fptr, "merge,%s_sort,%d,%s,%d,%d,%.17f\n",
+                                algorithm, world_size, construct, num_threads, size, duration
+                            );
                             if (VERBOSE)
-                                printf("Enumeration sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                                printf("%s sort (%s) mpi_merge for array of size %d trial %d took %.7fs.\n", algorithm, construct, size, trial, duration);
+                        }
+
+                        // run mpi_partition experiment
+                        duration = run_mpi_partition(MPI_COMM_WORLD, world_size, rank, size, algorithm, construct, file_name, NULL);
+                        if (rank == 0)
+                        {
+                            // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                            fprintf(
+                                fptr, "partition,%s_sort,%d,%s,%d,%d,%.17f\n",
+                                algorithm, world_size, construct, num_threads, size, duration
+                            );
+                            if (VERBOSE)
+                                printf("%s sort (%s) mpi_partition for array of size %d trial %d took %.7fs.\n", algorithm, construct, size, trial, duration);
                         }
                     }
 
-                    // sort array with (openmp multi threaded) parallel merge sort
-                    snprintf(construct, sizeof(construct), "tasks");
-                    duration = run_merge_merge_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
+                    // MERGE SORT - ONE THREAD WITH MPI MERGE AND MPI PARTITION
 
+                    // select sorting algorithm implementation based on num_threads
+                    snprintf(algorithm, sizeof(algorithm), "merge");
+                    if (num_threads == 1)
+                        snprintf(construct, sizeof(construct), "single");
+                    else
+                        snprintf(construct, sizeof(construct), "tasks");
+
+                    // run mpi_merge experiment
+                    duration = run_mpi_merge(MPI_COMM_WORLD, world_size, rank, size, algorithm, construct, file_name, NULL);
                     if (rank == 0)
                     {
                         // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
                         fprintf(
-                            fptr, "merge,merge_sort,%d,%s,%d,%d,%.17f\n",
-                            world_size, construct, num_threads, size, duration);
-
+                            fptr, "merge,%s_sort,%d,%s,%d,%d,%.17f\n",
+                            algorithm, world_size, construct, num_threads, size, duration
+                        );
                         if (VERBOSE)
-                            printf("Merge sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                            printf("%s sort (%s) mpi_merge for array of size %d trial %d took %.7fs.\n", algorithm, construct, size, trial, duration);
                     }
 
-                    // sort array with (openmp multi threaded) parallel quick sort
-                    snprintf(construct, sizeof(construct), "tasks");
-                    duration = run_partition_quick_sort(MPI_COMM_WORLD, world_size, rank, size, construct, file_name, NULL);
-
+                    // run mpi_partition experiment
+                    duration = run_mpi_partition(MPI_COMM_WORLD, world_size, rank, size, algorithm, construct, file_name, NULL);
                     if (rank == 0)
                     {
                         // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
                         fprintf(
-                            fptr, "partition,quick_sort,%d,%s,%d,%d,%.17f\n",
-                            world_size, construct, num_threads, size, duration
+                            fptr, "partition,%s_sort,%d,%s,%d,%d,%.17f\n",
+                            algorithm, world_size, construct, num_threads, size, duration
                         );
-
                         if (VERBOSE)
-                            printf("Quick sort (%s) for array of size %d trial %d took %.7fs.\n", construct, size, trial, duration);
+                            printf("%s sort (%s) mpi_partition for for array of size %d trial %d took %.7fs.\n", algorithm, construct, size, trial, duration);
+                    }
+
+                    // QUICK SORT - ONE THREAD WITH MPI MERGE AND MPI PARTITION
+
+                    // select sorting algorithm implementation based on num_threads
+                    snprintf(algorithm, sizeof(algorithm), "quick");
+                    if (num_threads == 1)
+                        snprintf(construct, sizeof(construct), "single");
+                    else
+                        snprintf(construct, sizeof(construct), "tasks");
+
+                    // run mpi_merge experiment
+                    duration = run_mpi_merge(MPI_COMM_WORLD, world_size, rank, size, algorithm, construct, file_name, NULL);
+                    if (rank == 0)
+                    {
+                        // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                        fprintf(
+                            fptr, "merge,%s_sort,%d,%s,%d,%d,%.17f\n",
+                            algorithm, world_size, construct, num_threads, size, duration
+                        );
+                        if (VERBOSE)
+                            printf("%s sort (%s) mpi_merge for array of size %d trial %d took %.7fs.\n", algorithm, construct, size, trial, duration);
+                    }
+
+                    // run mpi_partition experiment
+                    duration = run_mpi_partition(MPI_COMM_WORLD, world_size, rank, size, algorithm, construct, file_name, NULL);
+                    if (rank == 0)
+                    {
+                        // columns=[mpi:approach, sort_algorithm, mpi:world_size, openmp:construct, openmp:threads, size, duration]
+                        fprintf(
+                            fptr, "partition,%s_sort,%d,%s,%d,%d,%.17f\n",
+                            algorithm, world_size, construct, num_threads, size, duration
+                        );
+                        if (VERBOSE)
+                            printf("%s sort (%s) mpi_partition for array of size %d trial %d took %.7fs.\n", algorithm, construct, size, trial, duration);
                     }
                 }
             }

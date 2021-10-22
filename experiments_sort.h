@@ -15,12 +15,8 @@
 
 // project 2
 
-double run_merge_merge_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
-// double run_merge_quick_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
-double run_merge_enumeration_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
-// double run_partition_merge_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
-double run_partition_quick_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
-// double run_partition_enumeration_sort(MPI_Comm comm, int world_size, int rank, int size, char *construct, char *in_file, char *out_file);
+double run_mpi_merge(MPI_Comm comm, int world_size, int rank, int size, char *algorithm, char *construct, char *in_file, char *out_file);
+double run_mpi_partition(MPI_Comm comm, int world_size, int rank, int size, char *algorithm, char *construct, char *in_file, char *out_file);
 
 // project 1
 
