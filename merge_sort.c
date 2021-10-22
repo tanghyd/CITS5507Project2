@@ -16,7 +16,7 @@
 
 double* mpi_merge(int depth, int rank, double *chunk, int size, MPI_Comm comm, double *data)
 {
-    int parent, right_child;
+    int parent, right_child, right_size;
     double *half, *right_half, *result;
 
     int current_depth = 0;
@@ -33,18 +33,19 @@ double* mpi_merge(int depth, int rank, double *chunk, int size, MPI_Comm comm, d
 		    right_child = (rank | (1 << current_depth));
 
   		    // allocate memory and receive array of right child
-  		    right_half = malloc(size * sizeof(double));
-  		    MPI_Recv(right_half, size, MPI_DOUBLE, right_child, 0, comm, MPI_STATUS_IGNORE);
+  		    MPI_Recv(&right_size, 1, MPI_INT, right_child, 0, comm, MPI_STATUS_IGNORE);
+  		    right_half = malloc(right_size * sizeof(double));
+  		    MPI_Recv(right_half, right_size, MPI_DOUBLE, right_child, 1, comm, MPI_STATUS_IGNORE);
 
   		    // allocate memory for result of merge
-  		    result = malloc(2*size*sizeof(double));
+  		    result = malloc((size+right_size)*sizeof(double));
 
             // merge sort into result (size = length of half)
-  		    merge_halves(half, right_half, result, size);
+  		    merge_halves(half, right_half, result, size, right_size);
 
   		    // reassign half to merge result
             half = result;
-			size = size * 2;
+			size = size + right_size;  // merged size
 
 			free(right_half); 
 			result = NULL;
@@ -53,7 +54,8 @@ double* mpi_merge(int depth, int rank, double *chunk, int size, MPI_Comm comm, d
 
         } else {
 			  // right child sends local chunk to parent and frees memory
-              MPI_Send(half, size, MPI_DOUBLE, parent, 0, comm);
+              MPI_Send(&size, 1, MPI_INT, parent, 0, comm);
+              MPI_Send(half, size, MPI_DOUBLE, parent, 1, comm);
               if(current_depth != 0) free(half);  
               current_depth = depth;
         }
@@ -85,14 +87,14 @@ double* mpi_merge(int depth, int rank, double *chunk, int size, MPI_Comm comm, d
  *      result array where half1 and half2 are of length size.
  */
  
-void merge_halves(double *half1, double *half2, double *result, int size)
+void merge_halves(double *half1, double *half2, double *result, int half1_size, int half2_size)
 {
     // begin loop to copy from temp to main array in sorted order
     int i, j, n;
     i = j = n = 0;
 
     // loop if both subarrays have elements
-    while (i < size && j < size)
+    while (i < half1_size && j < half2_size)
     {
         // add smaller element to temp array
         if (half2[j] > half1[i])
@@ -111,13 +113,13 @@ void merge_halves(double *half1, double *half2, double *result, int size)
     // if both conditions above are not satisfied
     // then one subarray has been emptied
     // loop through remaining (sorted) elements
-    while (i < size)
+    while (i < half1_size)
     {
         result[n] = half1[i];
         i++; n++;
     }
 
-    while (j < size)
+    while (j < half2_size)
     {
         result[n] = half2[j];
         j++; n++;

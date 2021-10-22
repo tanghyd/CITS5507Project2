@@ -1,0 +1,108 @@
+// Quick sort
+
+def partition(array, low, high):
+    // select pivot value (i.e. last element of array)
+    pivot = array[high]
+
+    // let i be number of elements less than pivot
+    // we will iterate through the array and count
+    i = -1
+    for (j = low; j < high; j++)
+        if array[j] < pivot:
+            i++  // increment i to add to count
+            swap(array[i], array[j])  // swap position
+
+    return i + 1 // the starting index of the upper sub-array
+
+def quick_sort(array, low, high, cutoff=100):
+    // with OpenMP tasking (hybrid - thread continues if array is below cutoff)
+    partition_idx = partition(array, low, high)
+
+    #pragma omp task shared(arr) firstprivate(low, pi) if (high - low > cutoff)
+    quick_sort(array, low, partition_idx - 1)
+
+    #pragma omp task shared(arr) firstprivate(low, pi) if (high - low > cutoff)
+    quick_sort(array, partition_idx + 1, high)
+
+// MPI partition
+Based on: https://cse.buffalo.edu/faculty/miller/Courses/CSE633/Ramkumar-Spring-2014-CSE633.pdf
+- Requires number of processes to be a power of 2.
+1. Group all ranks and select a (last element) pivot from the first rank in the group
+2. Send this pivot value to each rank in the group.
+3. Swap values in the array of each rank until we have two sub-arrays split by the pivot.
+4. Send lower half subarrays to arrays in the lower half of the group,
+    and send upper half subarrays to arrays in the upper half of the group.
+5. Split the group of processes into two (lower and upper).
+6. Repeat steps 1-5 until the group size is equal 1, at which point all of the values in
+    rank i should have values greater than rank i-1, and less than rank i+1.
+7. Call a sorting algorithm on each rank independently.
+8. Array chunks across processes can either be gathered (MPI_Gatherv as we cannot ensure
+    that each rank now has equal sized arrays) or written directly to disk in parallel chunks.
+
+
+// Merge sort
+
+The following merge algorithm is implemented with two versions:
+1. two half arrays of size n, and a full array of size 2n;
+2. a full array size of 2n and a temp array of size 2n.
+
+While tasking and sections have been implemented for version 1,
+we show Version 2. as this was used for the MPI merge approach
+and we previously showed Version 1. in Project 1's pseudocode.
+
+The MPI Merge approach sends half2 from rank2 to rank1 with half1,
+and then merges the two results using merge sort on rank1.
+This process is recursive until the final rank has the full array.
+
+def merge(half1, half2, array, n)
+    // iterate through both half1 and half2
+    // adding the smaller element to array
+
+    i, j, k = 0
+
+    // both subarrays are not empty
+    while (j < n && i < n)
+        if half1[i] < half2[j]
+            array[k] = half1[i]
+            i++
+        else
+            array[k] = half2[j]
+            j++
+        k++
+
+    // one subarray has been emptied
+    
+    // if both conditions above not satisfied
+    // then one subarray has been emptied
+    // loop through remaining (sorted) elements
+    while (i < n)
+        array[k] = half1[i];
+        i++
+        k++
+
+    while (j < n)
+        array[n] = half2[j];
+        j++
+        n++
+
+    return array
+
+
+
+// Enumeration Sort
+
+def enumeration(array, temp, size)
+    // initialize enumerated array of ranks with zeros
+    ranks[size] = 0;
+
+    #pragma omp parallel for shared(array, temp)
+    for (int i = 0; i < size; i++)
+        for (int j = i+1; j < size; j++)
+            if (array[i] > array[j])
+                ranks[i]++
+            else
+                ranks[j]++
+
+        temp[ranks[i]] = arr[i];
+
+    return temp  // or copy temp to array
